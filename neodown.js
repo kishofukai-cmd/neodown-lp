@@ -200,46 +200,56 @@
     }
   };
 
-  /* ---- PuffField: 写真の上を漂う、雲のような綿の塊 -------------------------
-     数は少なく（PC5・スマホ3）。見出し・人物・画像内のロゴに重ならない位置に置く。
-     x,y=画面に対する位置  r=半径（幅1440px基準）  d=奥行き（大きいほど手前。大きく動く）  soft=ぼかし（手前の塊ほど強く） */
+  /* ---- PuffField: 写真の上を舞う、カポックの綿 ------------------------------
+     実物のカポックは真っ白ではなく、生成り〜アイボリーで絹のような繊維のかたまり。
+     べた塗りの雲にせず、半透明のぼかし＋細い繊維の重なりで描き、後ろの写真が透けるようにする（9/21 深井さん）。
+     数は少なく。見出し・人物・画像内のロゴ・左下の注記に重ならない位置に置く。
+     x,y=画面に対する位置  r=半径（幅1440px基準）  d=奥行き（大きいほど手前。大きく動く）  soft=ぼかし（手前ほど強く） */
   var PUFFS_PC = [
-    { x: 0.63, y: 0.17, r: 60, d: 0.6, soft: 0 },
-    { x: 0.94, y: 0.71, r: 98, d: 1.4, soft: 0.5 },
-    { x: 0.37, y: 0.61, r: 32, d: 0.8, soft: 0 },
-    { x: 0.05, y: 0.73, r: 56, d: 1.1, soft: 0.25 },  // 左下の注記に重ねない
-    { x: 0.53, y: 0.33, r: 22, d: 0.5, soft: 0 }
+    { x: 0.63, y: 0.17, r: 58, d: 0.6, soft: 0 },
+    { x: 0.94, y: 0.71, r: 96, d: 1.4, soft: 0.5 },
+    { x: 0.37, y: 0.61, r: 30, d: 0.8, soft: 0 },
+    { x: 0.05, y: 0.73, r: 54, d: 1.1, soft: 0.25 },
+    { x: 0.53, y: 0.33, r: 20, d: 0.5, soft: 0 },
+    { x: 0.71, y: 0.57, r: 11, d: 0.9, soft: 0 },     // 小さな切れ端。舞っている感じを出す
+    { x: 0.29, y: 0.74, r: 9, d: 0.7, soft: 0 }
   ];
   var PUFFS_SP = [
-    { x: 0.80, y: 0.50, r: 44, d: 0.7, soft: 0 },
-    { x: 0.15, y: 0.67, r: 28, d: 0.9, soft: 0 },
-    { x: 0.94, y: 0.87, r: 72, d: 1.3, soft: 0.45 }
+    { x: 0.80, y: 0.50, r: 42, d: 0.7, soft: 0 },
+    { x: 0.15, y: 0.67, r: 26, d: 0.9, soft: 0 },
+    { x: 0.94, y: 0.87, r: 70, d: 1.3, soft: 0.45 },
+    { x: 0.55, y: 0.60, r: 9, d: 0.8, soft: 0 }
   ];
+  var IVORY = '241,232,212', SHEEN = '255,250,238';
 
   function makePuffSprite(r, soft, seed, dpr) {
-    var rnd = mulberry32(seed), S = Math.ceil(r * 4.4 * dpr), c = S / 2, R = r * dpr;
+    var rnd = mulberry32(seed), S = Math.ceil(r * 5 * dpr), c = S / 2, R = r * dpr;
     var cv = document.createElement('canvas'); cv.width = cv.height = S;
-    var g = cv.getContext('2d'), blobs = [], i;
-    for (i = 0; i < 12; i++) {
-      var bx = (rnd() * 2 - 1) * R * 0.78, edge = Math.abs(bx) / (R * 0.78);
-      blobs.push({ x: bx, y: (rnd() * 2 - 1) * R * 0.3 - (1 - edge) * R * 0.2, r: R * (0.36 + rnd() * 0.3) * (1 - 0.4 * edge) });
+    var g = cv.getContext('2d'), i;
+    function blob(x, y, br, rgb, a0) {
+      var gr = g.createRadialGradient(c + x, c + y, 0, c + x, c + y, br);
+      gr.addColorStop(0, 'rgba(' + rgb + ',' + a0 + ')');
+      gr.addColorStop(0.5, 'rgba(' + rgb + ',' + (a0 * 0.45) + ')');
+      gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(c + x, c + y, br, 0, Math.PI * 2); g.fill();
     }
-    function pass(dx, dy, rgb, a0, a1) {
-      blobs.forEach(function (b) {
-        var gr = g.createRadialGradient(c + b.x + dx, c + b.y + dy, 0, c + b.x + dx, c + b.y + dy, b.r * (1 + soft * 0.6));
-        gr.addColorStop(0, 'rgba(' + rgb + ',' + a0 + ')');
-        gr.addColorStop(Math.max(0.2, 0.58 - soft * 0.3), 'rgba(' + rgb + ',' + a1 + ')');
-        gr.addColorStop(1, 'rgba(' + rgb + ',0)');
-        g.fillStyle = gr; g.beginPath(); g.arc(c + b.x + dx, c + b.y + dy, b.r * (1 + soft * 0.6), 0, Math.PI * 2); g.fill();
-      });
+    // 1) 半透明のぼかしを不ぞろいに重ねる（芯でも後ろが透ける濃さ）
+    for (i = 0; i < 18; i++) {
+      var ang = rnd() * Math.PI * 2, rad = Math.pow(rnd(), 0.7);
+      blob(Math.cos(ang) * rad * R * 0.8, Math.sin(ang) * rad * R * 0.42, R * (0.26 + rnd() * 0.3) * (1 + soft * 0.7), IVORY, 0.35 - soft * 0.08);
     }
-    pass(R * 0.12, R * 0.22, '118,98,86', 0.28, 0.13);  // 右下の影で量感を出す（写真の光は左から）
-    pass(0, 0, '252,246,238', 0.95, 0.78);              // 写真の綿に合わせた、少し温かい白
-    g.strokeStyle = 'rgba(252,246,238,' + (0.42 - soft * 0.3) + ')'; g.lineWidth = Math.max(0.7 * dpr, R * 0.009); g.lineCap = 'round';
-    for (i = 0; i < 9; i++) {                 // ふちから出る細い毛羽（出しすぎると虫のように見える）
-      var a = rnd() * Math.PI * 2, ex = Math.cos(a) * R * 0.86, ey = Math.sin(a) * R * 0.44, len = R * (0.14 + rnd() * 0.2), k = (rnd() - 0.5) * len * 0.7;
-      g.beginPath(); g.moveTo(c + ex, c + ey);
-      g.quadraticCurveTo(c + ex + Math.cos(a) * len * 0.5 - Math.sin(a) * k, c + ey + Math.sin(a) * len * 0.5 + Math.cos(a) * k, c + ex + Math.cos(a) * len, c + ey + Math.sin(a) * len);
+    // 2) 左上に絹のようなつや
+    for (i = 0; i < 5; i++) blob((rnd() - 0.75) * R * 0.8, (rnd() - 0.8) * R * 0.4, R * (0.18 + rnd() * 0.2), SHEEN, 0.22);
+    // 3) 細い繊維を内側から外へ重ねる（かたまりが繊維でできていると分かるように）
+    g.lineCap = 'round';
+    var n = soft ? 40 : 90;
+    for (i = 0; i < n; i++) {
+      var a = rnd() * Math.PI * 2, q = Math.pow(rnd(), 0.6), sx = Math.cos(a) * q * R * 0.8, sy = Math.sin(a) * q * R * 0.42;
+      var dir = a + (rnd() - 0.5) * 2.4, len = R * (0.3 + rnd() * 0.75), k = (rnd() - 0.5) * len * 0.9;
+      g.strokeStyle = 'rgba(' + (rnd() < 0.35 ? SHEEN : IVORY) + ',' + ((0.12 + rnd() * 0.24) * (1 - soft * 0.5)).toFixed(3) + ')';
+      g.lineWidth = Math.max(0.6 * dpr, R * 0.006);
+      g.beginPath(); g.moveTo(c + sx, c + sy);
+      g.quadraticCurveTo(c + sx + Math.cos(dir) * len * 0.5 - Math.sin(dir) * k, c + sy + Math.sin(dir) * len * 0.5 + Math.cos(dir) * k, c + sx + Math.cos(dir) * len, c + sy + Math.sin(dir) * len);
       g.stroke();
     }
     return cv;
@@ -277,11 +287,13 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.puffs.forEach(function (p) {
       var d = p.s.d;
-      var x = p.s.x * self.w + Math.sin(t * 0.13 + p.ph) * 14 * d + self.mc[0] * 18 * d + self.cur * 50 * d;
-      var y = p.s.y * self.h + Math.cos(t * 0.1 + p.ph) * 9 * d + self.mc[1] * 10 * d - self.cur * 150 * d;
-      var sc = 1 + self.cur * 0.15 * d, size = p.img.width * sc;
-      ctx.setTransform(1, 0, 0, 1, x * dpr, y * dpr); ctx.rotate(Math.sin(t * 0.07 + p.ph) * 0.06);
-      ctx.globalAlpha = self.fade * (p.s.soft ? 0.88 : 0.96);
+      // 軽さ: 2つの周期を重ねてふわふわ漂わせ、ゆっくり回す。小さいものほどよく動く
+      var light = 1 + Math.max(0, 40 - p.r) / 40, dir = p.ph % 2 > 1 ? 1 : -1;
+      var x = p.s.x * self.w + (Math.sin(t * 0.21 + p.ph) * 24 + Math.sin(t * 0.47 + p.ph * 2) * 8) * d * light + self.mc[0] * 20 * d + self.cur * 60 * d;
+      var y = p.s.y * self.h + (Math.cos(t * 0.17 + p.ph) * 16 + Math.sin(t * 0.39 + p.ph) * 6) * d * light + self.mc[1] * 12 * d - self.cur * 190 * d * light;
+      var sc = 1 + Math.sin(t * 0.31 + p.ph) * 0.03 + self.cur * 0.15 * d, size = p.img.width * sc;
+      ctx.setTransform(1, 0, 0, 1, x * dpr, y * dpr); ctx.rotate(t * 0.045 * dir * light + Math.sin(t * 0.23 + p.ph) * 0.12);
+      ctx.globalAlpha = self.fade * 0.9;
       ctx.drawImage(p.img, -size / 2, -size / 2, size, size);
     });
     ctx.globalAlpha = 1; ctx.setTransform(1, 0, 0, 1, 0, 0);
