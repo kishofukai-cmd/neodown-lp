@@ -173,28 +173,6 @@
       };
     },
 
-    // 写真ヒーロー用: 画面全体をゆっくり漂う綿ぼこり。スクロールで右上へ流れる
-    dust: function (opts) {
-      opts = opts || {};
-      var r = mulberry32(5), N = 46, fibers = [];
-      for (var i = 0; i < N; i++) {
-        // 手前に来すぎると傷のように見えるので、奥行きは奥寄り・長さは短め
-        var c0 = [(r() * 2 - 1) * 2, (r() * 2 - 1) * 1.2, -1.1 + r() * 1.4], t = randDir(r), len = 0.015 + r() * 0.028;
-        var c1 = [c0[0] + 0.5 + r() * 0.4, c0[1] + 0.2 + r() * 0.3, c0[2]];
-        fibers.push({
-          s: [{ a: add(c0, t, -len), b: add(c0, t, len), c: 0.01 + r() * 0.02 }, { a: add(c1, t, -len), b: add(c1, t, len), c: 0.01 + r() * 0.02 }],
-          n: randDir(r), delay: 0, tone: 0
-        });
-      }
-      return {
-        fibers: fibers, nodes: null, nodeFrom: 9, maxDelay: 0,
-        zoom: [1, 1.1], spin: [0.02, 0.02], width: [1.1, 1.1],
-        tilt: 0, scale: 0.5, alpha: 0.85, still: !!opts.still,
-        tones: ['255,253,250'],
-        center: function (w, h) { return [w / 2, h / 2]; }
-      };
-    },
-
     // ヒーロー: 小さくまとまった綿 → 空気を含んでふくらむ
     hero: function (opts) {
       opts = opts || {};
@@ -222,6 +200,94 @@
     }
   };
 
+  /* ---- PuffField: 写真の上を漂う、雲のような綿の塊 -------------------------
+     数は少なく（PC5・スマホ3）。見出し・人物・画像内のロゴに重ならない位置に置く。
+     x,y=画面に対する位置  r=半径（幅1440px基準）  d=奥行き（大きいほど手前。大きく動く）  soft=ぼかし（手前の塊ほど強く） */
+  var PUFFS_PC = [
+    { x: 0.63, y: 0.17, r: 60, d: 0.6, soft: 0 },
+    { x: 0.94, y: 0.71, r: 98, d: 1.4, soft: 0.5 },
+    { x: 0.37, y: 0.61, r: 32, d: 0.8, soft: 0 },
+    { x: 0.05, y: 0.73, r: 56, d: 1.1, soft: 0.25 },  // 左下の注記に重ねない
+    { x: 0.53, y: 0.33, r: 22, d: 0.5, soft: 0 }
+  ];
+  var PUFFS_SP = [
+    { x: 0.80, y: 0.50, r: 44, d: 0.7, soft: 0 },
+    { x: 0.15, y: 0.67, r: 28, d: 0.9, soft: 0 },
+    { x: 0.94, y: 0.87, r: 72, d: 1.3, soft: 0.45 }
+  ];
+
+  function makePuffSprite(r, soft, seed, dpr) {
+    var rnd = mulberry32(seed), S = Math.ceil(r * 4.4 * dpr), c = S / 2, R = r * dpr;
+    var cv = document.createElement('canvas'); cv.width = cv.height = S;
+    var g = cv.getContext('2d'), blobs = [], i;
+    for (i = 0; i < 12; i++) {
+      var bx = (rnd() * 2 - 1) * R * 0.78, edge = Math.abs(bx) / (R * 0.78);
+      blobs.push({ x: bx, y: (rnd() * 2 - 1) * R * 0.3 - (1 - edge) * R * 0.2, r: R * (0.36 + rnd() * 0.3) * (1 - 0.4 * edge) });
+    }
+    function pass(dx, dy, rgb, a0, a1) {
+      blobs.forEach(function (b) {
+        var gr = g.createRadialGradient(c + b.x + dx, c + b.y + dy, 0, c + b.x + dx, c + b.y + dy, b.r * (1 + soft * 0.6));
+        gr.addColorStop(0, 'rgba(' + rgb + ',' + a0 + ')');
+        gr.addColorStop(Math.max(0.2, 0.58 - soft * 0.3), 'rgba(' + rgb + ',' + a1 + ')');
+        gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(c + b.x + dx, c + b.y + dy, b.r * (1 + soft * 0.6), 0, Math.PI * 2); g.fill();
+      });
+    }
+    pass(R * 0.12, R * 0.22, '118,98,86', 0.28, 0.13);  // 右下の影で量感を出す（写真の光は左から）
+    pass(0, 0, '252,246,238', 0.95, 0.78);              // 写真の綿に合わせた、少し温かい白
+    g.strokeStyle = 'rgba(252,246,238,' + (0.42 - soft * 0.3) + ')'; g.lineWidth = Math.max(0.7 * dpr, R * 0.009); g.lineCap = 'round';
+    for (i = 0; i < 9; i++) {                 // ふちから出る細い毛羽（出しすぎると虫のように見える）
+      var a = rnd() * Math.PI * 2, ex = Math.cos(a) * R * 0.86, ey = Math.sin(a) * R * 0.44, len = R * (0.14 + rnd() * 0.2), k = (rnd() - 0.5) * len * 0.7;
+      g.beginPath(); g.moveTo(c + ex, c + ey);
+      g.quadraticCurveTo(c + ex + Math.cos(a) * len * 0.5 - Math.sin(a) * k, c + ey + Math.sin(a) * len * 0.5 + Math.cos(a) * k, c + ex + Math.cos(a) * len, c + ey + Math.sin(a) * len);
+      g.stroke();
+    }
+    return cv;
+  }
+
+  function PuffField(canvas, opts) {
+    this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.still = !!(opts && opts.still);
+    this.target = 0; this.cur = 0; this.mouse = [0, 0]; this.mc = [0, 0]; this.fade = this.still ? 1 : 0;
+    this.t0 = performance.now(); this.visible = false; this.running = false; this._frame = this._frame.bind(this);
+    this.resize();
+    var self = this;
+    if ('ResizeObserver' in global) new ResizeObserver(function () { self.resize(); self.draw(); }).observe(canvas);
+    if ('IntersectionObserver' in global) new IntersectionObserver(function (es) { self.visible = es[0].isIntersecting; if (self.visible) self.start(); }).observe(canvas);
+    else { this.visible = true; this.start(); }
+    global.addEventListener('pointermove', function (e) { self.mouse = [e.clientX / global.innerWidth * 2 - 1, e.clientY / global.innerHeight * 2 - 1]; }, { passive: true });
+  }
+  PuffField.prototype.resize = function () {
+    var r = this.canvas.getBoundingClientRect(), dpr = Math.min(global.devicePixelRatio || 1, 2);
+    this.w = Math.max(1, r.width); this.h = Math.max(1, r.height); this.dpr = dpr;
+    this.canvas.width = Math.round(this.w * dpr); this.canvas.height = Math.round(this.h * dpr);
+    var spec = this.w > 860 ? PUFFS_PC : PUFFS_SP, k = this.w > 860 ? Math.max(0.75, Math.min(1.3, this.w / 1440)) : 1;
+    this.puffs = spec.map(function (s, i) { return { s: s, r: s.r * k, ph: i * 1.7 + 0.4, img: makePuffSprite(s.r * k, s.soft, 11 + i * 7, dpr) }; });
+  };
+  PuffField.prototype.setProgress = function (v) { this.target = v; if (this.still) { this.cur = v; this.draw(); } };
+  PuffField.prototype.start = function () { if (this.still) { this.draw(); return; } if (this.running) return; this.running = true; requestAnimationFrame(this._frame); };
+  PuffField.prototype._frame = function () {
+    if (!this.visible) { this.running = false; return; }
+    this.cur += (this.target - this.cur) * 0.1;
+    this.mc[0] += (this.mouse[0] - this.mc[0]) * 0.04; this.mc[1] += (this.mouse[1] - this.mc[1]) * 0.04;
+    if (performance.now() - this.t0 > 700) this.fade += (1 - this.fade) * 0.025;
+    this.draw(); requestAnimationFrame(this._frame);
+  };
+  PuffField.prototype.draw = function () {
+    var ctx = this.ctx, dpr = this.dpr, t = this.still ? 0 : (performance.now() - this.t0) / 1000, self = this;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.puffs.forEach(function (p) {
+      var d = p.s.d;
+      var x = p.s.x * self.w + Math.sin(t * 0.13 + p.ph) * 14 * d + self.mc[0] * 18 * d + self.cur * 50 * d;
+      var y = p.s.y * self.h + Math.cos(t * 0.1 + p.ph) * 9 * d + self.mc[1] * 10 * d - self.cur * 150 * d;
+      var sc = 1 + self.cur * 0.15 * d, size = p.img.width * sc;
+      ctx.setTransform(1, 0, 0, 1, x * dpr, y * dpr); ctx.rotate(Math.sin(t * 0.07 + p.ph) * 0.06);
+      ctx.globalAlpha = self.fade * (p.s.soft ? 0.88 : 0.96);
+      ctx.drawImage(p.img, -size / 2, -size / 2, size, size);
+    });
+    ctx.globalAlpha = 1; ctx.setTransform(1, 0, 0, 1, 0, 0);
+  };
+
+  global.PuffField = PuffField;
   global.FiberField = FiberField;
 })(window);
 
@@ -258,6 +324,9 @@
       fields[name] = new FiberField(cv, preset);
     });
   }
+
+  /* ---- 写真ヒーローの上を漂う綿の塊 --------------------------------------- */
+  var puffs = window.PuffField ? $$('[data-puffs]').map(function (cv) { return new PuffField(cv, { still: reduce }); }) : [];
 
   var rows = $$('[data-third-row]'), copy = $('[data-third-copy]');
 
@@ -312,7 +381,7 @@
     gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.4 });
     gsap.from('[data-hero-photo] img, [data-hero-photo] video', { scale: 1.1, duration: 3.2, ease: 'power2.out' });
     gsap.timeline({ scrollTrigger: { trigger: '[data-hero]', start: 'top top', end: 'bottom bottom', scrub: true, onUpdate: function (self) {
-      if (fields.dust) fields.dust.setProgress(self.progress);
+      puffs.forEach(function (p) { p.setProgress(self.progress); });
       if (header) header.classList.toggle('on-light', self.progress > 0.8); // 写真が生成りに溶けたらヘッダーを濃い文字に
     } } })
       .to('[data-hero-photo]', { scale: 1.3, ease: 'none', duration: 1 }, 0)
