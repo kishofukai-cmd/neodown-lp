@@ -347,10 +347,9 @@
     $$('[data-metric]').forEach(function (m) { m.classList.add('is-in'); });
     if (fields.tech) fields.tech.setProgress(3);
     if (fields.hero) fields.hero.setProgress(1);
-    if (!reduce) {
-      rows.forEach(function (li) { li.style.setProperty('--strike', 1); li.style.setProperty('--dim', li.dataset.thirdRow === 'out' ? 1 : 0); li.style.setProperty('--lit', 1); });
-      if (copy) { copy.style.opacity = 1; copy.style.transform = 'none'; }
-    }
+    $$('[data-third]').forEach(function (el) { el.classList.add('is-play'); });
+    $$('[data-step]').forEach(function (s) { s.classList.add('is-active'); });
+    $$('[data-prog]').forEach(function (li) { li.classList.add('is-on'); });
     return;
   }
 
@@ -427,52 +426,36 @@
     });
   });
 
-  /* ---- 第3の中綿 -------------------------------------------------------- */
-  if (rows.length === 3 && copy) {
-    ScrollTrigger.create({
-      trigger: '[data-third]', start: 'top top', end: 'bottom bottom', scrub: true,
-      onUpdate: function (self) {
-        var p = self.progress;
-        var s1 = clamp01((p - 0.06) / 0.2), s2 = clamp01((p - 0.3) / 0.2), lit = clamp01((p - 0.54) / 0.2), cp = clamp01((p - 0.74) / 0.14);
-        rows[0].style.setProperty('--strike', s1); rows[0].style.setProperty('--dim', s1);
-        rows[1].style.setProperty('--strike', s2); rows[1].style.setProperty('--dim', s2);
-        rows[2].style.setProperty('--lit', lit);
-        copy.style.opacity = cp; copy.style.transform = 'translateY(' + (1 - cp) * 24 + 'px)';
+  /* ---- 第3の中綿: 画面は固定しない。見えたら一度だけ自動で再生（動きは CSS の .is-play） ---- */
+  var third = $('[data-third]');
+  if (third) ScrollTrigger.create({ trigger: third, start: 'top 62%', once: true, onEnter: function () { third.classList.add('is-play'); } });
+
+  /* ---- テクノロジー: 図だけ留まり、説明のカードは普通に流れる ----------------
+     画面中央にいちばん近いカードが「いまの段階」。カードとカードのあいだでは図がなめらかに変形する。 */
+  if ($('[data-tech]')) {
+    var steps = $$('[data-step]'), progs = $$('[data-prog]'), activeStep = -1;
+    var techUpdate = function () {
+      var vc = window.innerHeight * 0.55, cs = steps.map(function (s) { var r = s.getBoundingClientRect(); return r.top + r.height / 2; });
+      var p = 0;
+      if (vc <= cs[0]) p = 0;
+      else if (vc >= cs[cs.length - 1]) p = cs.length - 1;
+      else for (var i = 0; i < cs.length - 1; i++) if (vc >= cs[i] && vc < cs[i + 1]) { p = i + clamp01(((vc - cs[i]) / (cs[i + 1] - cs[i]) - 0.25) / 0.5); break; }
+      if (fields.tech) fields.tech.setProgress(p);
+      var idx = Math.round(p);
+      if (idx !== activeStep) {
+        steps.forEach(function (s, i) { s.classList.toggle('is-active', i === idx); });
+        progs.forEach(function (li) { li.classList.toggle('is-on', parseInt(li.dataset.prog, 10) <= idx); });
+        activeStep = idx;
       }
-    });
+    };
+    ScrollTrigger.create({ trigger: '[data-tech]', start: 'top bottom', end: 'bottom top', onUpdate: techUpdate, onRefresh: techUpdate });
+    techUpdate();
   }
 
-  /* ---- テクノロジー ------------------------------------------------------ */
-  if ($('[data-tech]')) {
-    // スクロール量 → 繊維の状態。各状態で一度止まるように区間を切る
-    var KEYS = [[0, 0], [0.1, 0], [0.3, 1], [0.4, 1], [0.6, 2], [0.7, 2], [0.88, 3], [1, 3]];
-    var STEP_AT = [0, 0.1, 0.4, 0.7];
-    var mapTech = function (p) {
-      for (var i = 1; i < KEYS.length; i++) {
-        if (p <= KEYS[i][0]) {
-          var a = KEYS[i - 1], b = KEYS[i], t = (p - a[0]) / (b[0] - a[0] || 1);
-          return a[1] + (b[1] - a[1]) * t;
-        }
-      }
-      return 3;
-    };
-    var steps = $$('[data-step]'), bar = $('[data-tech-bar]'), activeStep = 0;
-    ScrollTrigger.create({
-      trigger: '[data-tech]', start: 'top top', end: 'bottom bottom', scrub: true,
-      onUpdate: function (self) {
-        var p = self.progress, idx = 0;
-        if (fields.tech) fields.tech.setProgress(mapTech(p));
-        for (var i = 0; i < STEP_AT.length; i++) if (p >= STEP_AT[i]) idx = i;
-        if (idx !== activeStep) {
-          steps[activeStep].classList.remove('is-active');
-          steps[idx].classList.add('is-active');
-          activeStep = idx;
-        }
-        bar.style.transform = 'scaleX(' + p + ')';
-      }
-    });
-    gsap.to('.tech__bgword', { xPercent: -14, ease: 'none', scrollTrigger: { trigger: '[data-tech]', start: 'top top', end: 'bottom bottom', scrub: true } });
-  }
+  /* ---- シグネチャーモデルの写真: 枠の中でゆっくりずれる --------------------------- */
+  $$('[data-sig]').forEach(function (b) {
+    gsap.fromTo($('img', b), { yPercent: -10 }, { yPercent: 0, ease: 'none', scrollTrigger: { trigger: b, start: 'top bottom', end: 'bottom top', scrub: true } });
+  });
 
   /* ---- 機能性: 数字のカウントアップと棒 ------------------------------------ */
   $$('[data-metric]').forEach(function (m) {
