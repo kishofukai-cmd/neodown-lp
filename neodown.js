@@ -20,6 +20,7 @@
   function easeOutBack(t) { var c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
   function lerp(a, b, t) { return a + (b - a) * t; }
   function add(p, d, k) { return [p[0] + d[0] * k, p[1] + d[1] * k, p[2] + d[2] * k]; }
+  function norm(v) { var l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
 
   function FiberField(canvas, preset) {
     this.canvas = canvas;
@@ -105,7 +106,8 @@
       var a = [lerp(A.a[0], B.a[0], lt), lerp(A.a[1], B.a[1], lt), lerp(A.a[2], B.a[2], lt)];
       var b = [lerp(A.b[0], B.b[0], lt), lerp(A.b[1], B.b[1], lt), lerp(A.b[2], B.b[2], lt)];
       var cv = lerp(A.c, B.c, lt);
-      if (!this.still && cv > 0.001) cv *= 1 + Math.sin(time * 1.3 + i) * 0.18;
+      // 曲がりの揺れ幅は状態ごと（p.sway）。指定が無いプリセットは従来どおり 0.18
+      if (!this.still && cv > 0.001) cv *= 1 + Math.sin(time * 1.3 + i) * (p.sway ? lerp(p.sway[i0], p.sway[i0 + 1], tt) : 0.18);
       var m = add([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], f.n, cv);
       var pa = proj(a), pb = proj(b), pm = proj(m);
       var depth = clamp01(((pa[2] + pb[2]) / 2 + 1.4) / 2.8);
@@ -138,7 +140,7 @@
     // テクノロジー: 絡まり → ひらく（花のように放射）→ たてる（ジャングルジム状の格子）→ とめる（交点に点）
     tech: function (opts) {
       opts = opts || {};
-      var r = mulberry32(7), G = 4, step = 0.6, o = -0.9, edges = [], nodes = [], i, j, k;
+      var r = mulberry32(7), r2 = mulberry32(29), G = 4, step = 0.6, o = -0.9, edges = [], nodes = [], i, j, k;
       for (i = 0; i < G; i++) for (j = 0; j < G; j++) for (k = 0; k < G; k++) {
         var pt = [o + i * step, o + j * step, o + k * step];
         nodes.push(pt);
@@ -150,12 +152,15 @@
       var maxDelay = 0.4;
       var fibers = edges.map(function (e) {
         var c0 = add([0, 0, 0], randDir(r), Math.pow(r(), 0.6) * 0.42), d0 = randDir(r), l0 = 0.18 + r() * 0.3;
-        var d1 = randDir(r), r1 = 0.35 + r() * 0.75, l1 = 0.4 + r() * 0.25;
+        // ひらく（状態1）: ふわふわに見せる（9/24 深井さん）。放射の半径と長さのばらつきを広げ、向きも放射から少しそらし、細く・よく曲げる。
+        // 乱数 r の呼び出し回数と順番は変えない（変えると状態0の配置と線の色分けが変わる）。足りない乱数は r2 から取る
+        var d1 = randDir(r), r1 = 0.2 + Math.pow(r(), 0.85) * 0.92, l1 = 0.2 + r() * 0.5;
+        var a1 = add([0, 0, 0], d1, r1), s1 = norm(add(d1, randDir(r2), 0.3));
         var lat = { a: e[0], b: e[1], c: 0 };
         return {
           s: [
             { a: add(c0, d0, -l0), b: add(c0, d0, l0), c: 0.3 + r() * 0.4 },
-            { a: add([0, 0, 0], d1, r1), b: add([0, 0, 0], d1, r1 + l1), c: 0.06 + r() * 0.1 },
+            { a: a1, b: add(a1, s1, l1), c: l1 * (0.22 + r() * 0.3) },
             lat, lat
           ],
           n: randDir(r),
@@ -165,7 +170,8 @@
       });
       return {
         fibers: fibers, nodes: nodes, nodeFrom: 2, nodeSize: 6.5, maxDelay: maxDelay,
-        zoom: [1.3, 0.9, 1, 1.03], spin: [0.35, 0.22, 0.16, 0.08], width: [1.3, 1.3, 2, 2.2],
+        zoom: [1.3, 0.9, 1, 1.03], spin: [0.35, 0.22, 0.16, 0.08], width: [1.3, 0.8, 2, 2.2],
+        sway: [0.18, 0.4, 0.18, 0.18], // 曲がりの揺れ幅。ひらく（状態1）だけ大きく、綿毛がゆらぐように
         tilt: 0.42, scale: 0.285, alpha: 0.9, still: !!opts.still,
         // 繊維はチャコール、交点（接着点）だけロゴと同じ赤
         tones: ['36,39,43', '58,63,69'], nodeTone: '215,20,26', nodeRing: '242,238,232',
@@ -367,6 +373,31 @@
     if ((a.getAttribute('href') || '').trim()) a.hidden = false;
   });
 
+  /* ---- シグネチャーモデル: サムネ（data-large＝大きい版の画像）を押すと、上の大きな写真（data-sig-main）が差し替わる ----
+     ライトボックスではなく枠の中身だけを替える。読み込み（decode）を待ってから短いフェードで戻す。連打しても最後に押した写真で止まる */
+  $$('[data-sig-thumbs]').forEach(function (list) {
+    var main = $('[data-sig-main]'), btns = $$('[data-large]', list), token = 0;
+    if (!main || !btns.length) return;
+    btns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var src = btn.getAttribute('data-large'), thumb = $('img', btn);
+        if (!src || btn.classList.contains('is-current')) return;
+        btns.forEach(function (b) { var on = b === btn; b.classList.toggle('is-current', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        var my = ++token, pre = new Image();
+        pre.src = src;
+        main.classList.add('is-swapping');
+        var loaded = pre.decode ? pre.decode().catch(function () {}) : Promise.resolve();
+        var faded = new Promise(function (r) { setTimeout(r, reduce ? 0 : 300); }); // CSS の opacity .3s と合わせる
+        Promise.all([loaded, faded]).then(function () {
+          if (my !== token) return;
+          main.src = src;
+          if (thumb) main.alt = thumb.alt;
+          main.classList.remove('is-swapping');
+        });
+      });
+    });
+  });
+
   /* ---- 繊維の canvas（data-tones="r,g,b|r,g,b" と data-alpha で色を上書き） --- */
   var fields = {};
   if (window.FiberField) {
@@ -393,6 +424,7 @@
     $$('[data-third]').forEach(function (el) { el.classList.add('is-play'); });
     $$('[data-step]').forEach(function (s) { s.classList.add('is-active'); });
     $$('[data-prog]').forEach(function (li) { li.classList.add('is-on'); });
+    $$('[data-chapnav]').forEach(function (n) { n.hidden = true; }); // 章ナビは出さない（現在地を追えないため）
     return;
   }
 
@@ -429,20 +461,64 @@
     header.classList.toggle('on-light', !(first && first.matches('[data-theme="dark"], .hero--photo')));
   }
 
+  /* ---- 章ナビ: いま見ている章に印（.is-on）。ヒーローの間は隠し、01 に入ったら出す（.is-shown） ----
+     章の範囲は「その章の先頭 section の上端が画面中央に来てから、次の章の先頭 section の上端が画面中央に来るまで」。
+     1つの章が複数の section（と帯）に分かれていても、あいだで印が消えないようにするため。最後の章は section の下端まで */
+  var chapnav = $('[data-chapnav]');
+  if (chapnav) {
+    var chapters = $$('[data-chapter]').filter(function (sec) { return !sec.hidden; }); // 動画IDが空の MOVIE など、隠れている章は飛ばす
+    var chapLinks = $$('a[href^="#"]', chapnav);
+    var linkFor = function (sec) { return chapLinks.filter(function (a) { return a.getAttribute('href') === '#' + sec.id; })[0]; };
+    $$('[data-chapter]').forEach(function (sec) { var a = linkFor(sec); if (a && sec.hidden) a.hidden = true; });
+    // スマホ（横一列）: いまの章の項目をナビの中央へ。ページ本体はスクロールさせない
+    var centerLink = function (a) {
+      if (chapnav.scrollWidth <= chapnav.clientWidth + 1) return;
+      chapnav.scrollTo({ left: a.offsetLeft - (chapnav.clientWidth - a.offsetWidth) / 2, behavior: 'smooth' });
+    };
+    chapters.forEach(function (sec, i) {
+      var a = linkFor(sec), next = chapters[i + 1];
+      if (!a) return;
+      ScrollTrigger.create({
+        trigger: sec, start: 'top 50%',
+        endTrigger: next || sec, end: next ? 'top 50%' : 'bottom 50%',
+        onToggle: function (self) {
+          a.classList.toggle('is-on', self.isActive);
+          if (self.isActive) { a.setAttribute('aria-current', 'true'); centerLink(a); } else a.removeAttribute('aria-current');
+        }
+      });
+    });
+    if (chapters.length) {
+      // 01 に入ったら出し、ヒーローへ戻ったら隠す（end を 'max' にすると最下部で非アクティブ扱いになり消えたため、出入りの2つだけで決める）
+      ScrollTrigger.create({
+        trigger: chapters[0], start: 'top 50%',
+        onEnter: function () { chapnav.classList.add('is-shown'); },
+        onLeaveBack: function () { chapnav.classList.remove('is-shown'); }
+      });
+    }
+    // PC（右端の縦ナビ）: 暗い面の上では文字を生成りに
+    $$('main > *, .nd-footer').forEach(function (el) {
+      var dark = el.matches('[data-theme="dark"], .hero--photo, .marquee--dark, .nd-footer');
+      ScrollTrigger.create({ trigger: el, start: 'top 50%', end: 'bottom 50%', onToggle: function (self) { if (self.isActive) chapnav.classList.toggle('on-dark', dark); } });
+    });
+    chapnav.hidden = false;
+  }
+
   /* ---- HERO ----------------------------------------------------------- */
   if ($('.hero--photo')) {
     // 全面写真のヒーロー: 読み込み時に少し引いた位置から寄り、スクロールで壁へ歩み寄るように寄って生成りに溶ける
-    gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.4 });
-    gsap.from('[data-hero-photo] img, [data-hero-photo] video', { scale: 1.1, duration: 3.2, ease: 'power2.out' });
+    // BEYOND の写真ヒーローは文字を置かない（9/24）。文字がある版に戻しても動くよう、対象があるときだけ動かす
+    if ($('[data-line]')) gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.4 });
+    if ($('[data-hero-photo] img, [data-hero-photo] video')) gsap.from('[data-hero-photo] img, [data-hero-photo] video', { scale: 1.1, duration: 3.2, ease: 'power2.out' });
+    var heroFadeOut = $$('[data-hero-inner], .hero__scroll');
     gsap.timeline({ scrollTrigger: { trigger: '[data-hero]', start: 'top top', end: 'bottom bottom', scrub: true, onUpdate: function (self) {
       puffs.forEach(function (p) { p.setProgress(self.progress); });
       if (header) header.classList.toggle('on-light', self.progress > 0.8); // 写真が生成りに溶けたらヘッダーを濃い文字に
     } } })
       .to('[data-hero-photo]', { scale: 1.3, ease: 'none', duration: 1 }, 0)
-      .to('[data-hero-inner], .hero__scroll', { opacity: 0, y: -40, ease: 'none', duration: 0.35 }, 0)
+      .to(heroFadeOut.length ? heroFadeOut : {}, { opacity: 0, y: -40, ease: 'none', duration: 0.35 }, 0)
       .to('[data-hero-fade]', { opacity: 1, ease: 'none', duration: 0.42 }, 0.58);
   } else if ($('[data-hero]')) {
-    gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.2 });
+    if ($('[data-line]')) gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.2 });
     gsap.from('.hero__bgword', { opacity: 0, duration: 2, delay: 0.6 });
     // 入場: 小さな綿の粒から、ふくらんで現れる
     if (fields.hero) gsap.from(fields.hero.p, { scale: 0.1, alpha: 0, duration: 2.6, ease: 'expo.out', delay: 0.1 });
