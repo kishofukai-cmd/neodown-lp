@@ -308,7 +308,9 @@
 (function () {
   'use strict';
 
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // ?print=1 のときも動きを止め、完成形で描く（PDF化用）
+  // 正規表現に単語境界（バックスラッシュ＋b）を使わない。書き込み時にバックスペース文字へ化けて ?print=1 が効かなかった前例あり
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches || /[?&]print(=|&|$)/.test(location.search);
   // Studio に貼ったときは LP の外側に Studio 本体（隠してある）があるので、探す範囲を LP の中に限る
   var ROOT = document.querySelector('[data-nd-root]') || document;
   var $ = function (s, r) { return (r || ROOT).querySelector(s); };
@@ -347,6 +349,7 @@
     $$('[data-metric]').forEach(function (m) { m.classList.add('is-in'); });
     if (fields.tech) fields.tech.setProgress(3);
     if (fields.hero) fields.hero.setProgress(1);
+    puffs.forEach(function (p) { p.setProgress(0); }); // ヒーローの綿も静止した配置で描いておく
     $$('[data-third]').forEach(function (el) { el.classList.add('is-play'); });
     $$('[data-step]').forEach(function (s) { s.classList.add('is-active'); });
     $$('[data-prog]').forEach(function (li) { li.classList.add('is-on'); });
