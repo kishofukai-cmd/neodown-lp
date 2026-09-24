@@ -327,6 +327,46 @@
     $('[data-countdown-num]', el).textContent = days;
   });
 
+  /* ---- 動画（data-youtube="動画ID"。空なら hidden のまま何もしない） ---------------
+     最初はサムネイルと再生ボタンだけ。押されたら youtube-nocookie の iframe に差し替える。
+     動きを減らす設定（?print=1）でもサムネと再生ボタンは出す。data-rise の処理より前に hidden を外す（位置の計算がずれないように）
+     正規表現にバックスラッシュを使わない（書き込み時に化けた前例あり）。URLを丸ごと入れられても ID を取り出す */
+  $$('[data-youtube]').forEach(function (sec) {
+    var raw = (sec.getAttribute('data-youtube') || '').trim();
+    if (!raw) return;
+    var m = /^[A-Za-z0-9_-]{11}$/.test(raw) ? [raw, raw] : raw.match(/(?:v=|youtu[.]be[/]|embed[/]|shorts[/])([A-Za-z0-9_-]{11})/);
+    if (!m) { if (window.console) console.warn('data-youtube の動画IDを読み取れません: ' + raw); return; }
+    var id = m[1], frame = $('[data-movie-frame]', sec), thumb = $('[data-movie-thumb]', sec), play = $('[data-movie-play]', sec);
+    if (!frame || !play) return;
+    if (thumb) {
+      // 大きい順に試す（maxres 1280 → sd 640 → hq 480）。無いサイズは YouTube が 120×90 の灰色画像を返す（エラーにならないこともある）ので幅でも判定する
+      // 例: 9/24 の動画 -ZIZcHy7w8A は maxres が無く sd（640×480）まで
+      var sizes = ['maxresdefault', 'sddefault', 'hqdefault'], si = 0;
+      var next = function () { if (si < sizes.length - 1) thumb.src = 'https://i.ytimg.com/vi/' + id + '/' + sizes[++si] + '.jpg'; };
+      thumb.addEventListener('error', next);
+      thumb.addEventListener('load', function () { if (thumb.naturalWidth && thumb.naturalWidth <= 120) next(); });
+      thumb.src = 'https://i.ytimg.com/vi/' + id + '/' + sizes[0] + '.jpg';
+    }
+    play.addEventListener('click', function () {
+      var f = document.createElement('iframe');
+      f.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0&modestbranding=1&playsinline=1';
+      f.title = 'NEO DOWN KAPOK® BEYOND の動画';
+      f.allow = 'autoplay; encrypted-media; picture-in-picture';
+      f.allowFullscreen = true;
+      f.setAttribute('allowfullscreen', '');
+      frame.innerHTML = '';
+      frame.appendChild(f);
+      frame.classList.add('is-playing');
+      f.focus();
+    });
+    sec.hidden = false;
+  });
+
+  /* ---- 商品ページへのボタン（data-product-url）: href に URL が入っていれば hidden を外す。空なら hidden のまま ---- */
+  $$('[data-product-url]').forEach(function (a) {
+    if ((a.getAttribute('href') || '').trim()) a.hidden = false;
+  });
+
   /* ---- 繊維の canvas（data-tones="r,g,b|r,g,b" と data-alpha で色を上書き） --- */
   var fields = {};
   if (window.FiberField) {
