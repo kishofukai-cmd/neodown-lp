@@ -438,6 +438,24 @@
     gsap.ticker.lagSmoothing(0);
   }
 
+  /* ---- いまの位置から描き直す仕組み ----------------------------------------
+     ヒーローとヘッダーの文字色は、ScrollTrigger の内部状態（scrub の進み具合・onToggle の書き込み順）に頼らず、
+     スクロールのたびに（1フレームに1回まで）いまの位置から計算し直して書く。一番下から戻ったときや、途中の位置で再読み込みしたときに食い違わないように */
+  var syncers = [], syncQueued = false;
+  var syncAll = function () { syncQueued = false; syncers.forEach(function (f) { f(); }); };
+  var queueSync = function () { if (!syncQueued) { syncQueued = true; requestAnimationFrame(syncAll); } };
+  window.addEventListener('scroll', queueSync, { passive: true });
+  window.addEventListener('resize', queueSync);
+  ScrollTrigger.addEventListener('refresh', syncAll);
+
+  // ヒーローの進み具合（0＝最上部、1＝ヒーローを抜けた）。ScrollTrigger の start / end と同じ「上端が画面上端 → 下端が画面下端」を、要素の位置から直接求める
+  var heroEl = $('[data-hero]');
+  var heroProgress = function () {
+    if (!heroEl) return 1;
+    var r = heroEl.getBoundingClientRect(), d = r.height - window.innerHeight;
+    return d > 0 ? clamp01(-r.top / d) : (r.top < 0 ? 1 : 0);
+  };
+
   /* ---- ヘッダー: 下スクロールで隠す -------------------------------------- */
   var header = $('[data-header]');
   if (header) {
@@ -448,17 +466,23 @@
         header.classList.toggle('is-scrolled', self.scroll() > 80);
       }
     });
-    // ヘッダーの真下にあるセクションが明るい面か暗い面（写真を含む）かで文字色を切り替える
+    // ヘッダーの真下（上から40px）にあるセクションが明るい面か暗い面（写真を含む）かで文字色を切り替える。
+    // 以前はセクションごとの onToggle で書いていたが、ジャンプや再読み込みでヒーロー側の書き込みが後から勝ち、暗い面の上で濃い文字になった（9/25）
     header.classList.add('is-managed');
-    $$('main > *, .nd-footer').forEach(function (el) {
-      var dark = el.matches('[data-theme="dark"], .hero--photo, .band, .marquee--dark, .nd-footer');
-      ScrollTrigger.create({
-        trigger: el, start: 'top 40px', end: 'bottom 40px',
-        onToggle: function (self) { if (self.isActive) header.classList.toggle('on-light', !dark); }
-      });
-    });
-    var first = $('main > *');
-    header.classList.toggle('on-light', !(first && first.matches('[data-theme="dark"], .hero--photo')));
+    var toneEls = $$('main > *, .nd-footer');
+    var headerTone = function () {
+      var hit = null;
+      for (var i = 0; i < toneEls.length; i++) {
+        if (toneEls[i].hidden) continue;
+        var r = toneEls[i].getBoundingClientRect();
+        if (r.top <= 40 && r.bottom > 40) { hit = toneEls[i]; break; }
+      }
+      var dark = !hit || hit.matches('[data-theme="dark"], .hero--photo, .band, .marquee--dark, .nd-footer');
+      if (hit && hit.matches('.hero--photo')) dark = heroProgress() <= 0.8; // 写真が生成りに溶けたらヘッダーを濃い文字に
+      header.classList.toggle('on-light', !dark);
+    };
+    syncers.push(headerTone);
+    headerTone();
   }
 
   /* ---- 章ナビ: いま見ている章に印（.is-on）。ヒーローの間は隠し、01 に入ったら出す（.is-shown） ----
@@ -509,14 +533,33 @@
     // BEYOND の写真ヒーローは文字を置かない（9/24）。文字がある版に戻しても動くよう、対象があるときだけ動かす
     if ($('[data-line]')) gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.4 });
     if ($('[data-hero-photo] img, [data-hero-photo] video')) gsap.from('[data-hero-photo] img, [data-hero-photo] video', { scale: 1.1, duration: 3.2, ease: 'power2.out' });
-    var heroFadeOut = $$('[data-hero-inner], .hero__scroll');
-    gsap.timeline({ scrollTrigger: { trigger: '[data-hero]', start: 'top top', end: 'bottom bottom', scrub: true, onUpdate: function (self) {
-      puffs.forEach(function (p) { p.setProgress(self.progress); });
-      if (header) header.classList.toggle('on-light', self.progress > 0.8); // 写真が生成りに溶けたらヘッダーを濃い文字に
-    } } })
-      .to('[data-hero-photo]', { scale: 1.3, ease: 'none', duration: 1 }, 0)
-      .to(heroFadeOut.length ? heroFadeOut : {}, { opacity: 0, y: -40, ease: 'none', duration: 0.35 }, 0)
-      .to('[data-hero-fade]', { opacity: 1, ease: 'none', duration: 0.42 }, 0.58);
+    // スクロールの寄りは親の picture（data-hero-photo）に、読み込み時の寄り（上の gsap.from）は中の img に書くので、互いに上書きしない
+    // 以前は scrub のタイムラインで動かしていたが、一番下から戻ったときに生成りの幕（data-hero-fade）が出たまま残ると報告があった（9/25）。
+    // 内部に進み具合を持たないよう、いまの位置から求めた p（0〜1）でスタイルを毎回直接書く。p が 0 のときはインラインの指定を消して CSS の初期状態に戻す
+    var heroPhoto = $('[data-hero-photo]'), heroFade = $('[data-hero-fade]'), heroFadeOut = $$('[data-hero-inner], .hero__scroll'), heroLast = -1;
+    var drawHero = function (p, force) {
+      p = clamp01(p);
+      if (!force && p === heroLast) return;
+      heroLast = p;
+      var out = clamp01(p / 0.35), fade = clamp01((p - 0.58) / 0.42);
+      if (heroPhoto) heroPhoto.style.transform = p > 0 ? 'scale(' + (1 + 0.3 * p).toFixed(4) + ')' : ''; // 壁へ寄る（1 → 1.3）
+      heroFadeOut.forEach(function (el) { // SCROLL の表示（文字がある版は文字も）は、はじめの35%で上へ抜けて消える
+        el.style.opacity = out > 0 ? (1 - out).toFixed(3) : '';
+        el.style.transform = out > 0 ? 'translateY(' + (-40 * out).toFixed(1) + 'px)' : '';
+      });
+      if (heroFade) heroFade.style.opacity = fade > 0 ? fade.toFixed(3) : ''; // 後半の42%で生成りの幕が下りる
+      puffs.forEach(function (pf) { pf.setProgress(p); });
+    };
+    var heroSync = function () { drawHero(heroProgress()); };
+    ScrollTrigger.create({
+      trigger: '[data-hero]', start: 'top top', end: 'bottom bottom',
+      onUpdate: heroSync,
+      onRefresh: function () { drawHero(heroProgress(), true); },
+      onLeave: function () { drawHero(1, true); },
+      onLeaveBack: function () { drawHero(0, true); } // 最上部に戻ったら、必ず最初の状態を書く
+    });
+    syncers.push(heroSync);
+    drawHero(heroProgress(), true);
   } else if ($('[data-hero]')) {
     if ($('[data-line]')) gsap.from('[data-line]', { yPercent: 115, duration: 1.3, ease: 'expo.out', stagger: 0.14, delay: 0.2 });
     gsap.from('.hero__bgword', { opacity: 0, duration: 2, delay: 0.6 });
@@ -600,6 +643,21 @@
     gsap.from(w, { yPercent: 55, ease: 'none', scrollTrigger: { trigger: w.closest('.sec'), start: 'top 60%', end: 'bottom bottom', scrub: true } });
   });
 
-  window.addEventListener('load', function () { ScrollTrigger.refresh(); });
+  /* ---- あとから高さが変わったら（遅延読み込みの画像・動画のサムネ・フォントなど）、位置の計算を合わせ直す ----
+     ScrollTrigger は画面の大きさの変化しか見ないので、ページの高さの変化は自分で見張る。続けて変わるときは落ち着いてから1回だけ */
+  var pageH = document.documentElement.scrollHeight, refreshTimer = 0;
+  var queueRefresh = function () {
+    var h = document.documentElement.scrollHeight;
+    if (h === pageH) return;
+    pageH = h;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () { ScrollTrigger.refresh(); }, 200);
+  };
+  if ('ResizeObserver' in window) new ResizeObserver(queueRefresh).observe(ROOT === document ? document.body : ROOT);
+  $$('img[loading="lazy"], [data-movie-thumb]').forEach(function (img) { img.addEventListener('load', queueRefresh); });
+
+  // Studio 版は GSAP を後から読み込むので、ここに来た時点で load が終わっていることがある
+  if (document.readyState === 'complete') ScrollTrigger.refresh();
+  else window.addEventListener('load', function () { ScrollTrigger.refresh(); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { ScrollTrigger.refresh(); });
 })();
