@@ -207,26 +207,30 @@
   };
 
   /* ---- PuffField: 写真の上を舞う、カポックの綿 ------------------------------
-     実物のカポックは真っ白ではなく、生成り〜アイボリーで絹のような繊維のかたまり。
-     べた塗りの雲にせず、半透明のぼかし＋細い繊維の重なりで描き、後ろの写真が透けるようにする（9/21 深井さん）。
+     9/28〜 実写の綿で描く（深井さん支給の5枚を透過にしたスプライト。作り方は tools/make_puff_sprites.py）。
+     画像は canvas の data-puff-src にスペース区切りで並べる（puff-01〜05。01・05＝輪郭のぼやけた雲状の塊、02〜04＝繊維が絡んだ塊）。
+     雲状と繊維状を混ぜて割り当て、塊によっては2枚を重ねる（L）。後ろの写真が透けるよう、塊ごとに不透明度（o）を下げて描く。
+     画像が読めないとき・data-puff-src が無いときは、従来のプロシージャル描画（makePuffSprite）に戻る。
      数は少なく。見出し・人物・画像内のロゴ・左下の注記に重ならない位置に置く。
-     x,y=画面に対する位置  r=半径（幅1440px基準）  d=奥行き（大きいほど手前。大きく動く）  soft=ぼかし（手前ほど強く） */
+     x,y=画面に対する位置  r=半径（幅1440px基準）  d=奥行き（大きいほど手前。大きく動く）  soft=ぼかし（手前ほど強く）  o=不透明度（0.55〜0.9）
+     L=重ねるスプライト（1枚目が下）: [番号 0〜4（puff-01〜05）, 大きさ, 回転（度）, 上下反転, ずらし x, ずらし y（半径に対する割合）, 不透明度] */
   var PUFFS_PC = [
-    { x: 0.63, y: 0.17, r: 58, d: 0.6, soft: 0 },
-    { x: 0.94, y: 0.71, r: 96, d: 1.4, soft: 0.5 },
-    { x: 0.37, y: 0.61, r: 30, d: 0.8, soft: 0 },
-    { x: 0.05, y: 0.73, r: 54, d: 1.1, soft: 0.25 },
-    { x: 0.53, y: 0.33, r: 20, d: 0.5, soft: 0 },
-    { x: 0.71, y: 0.57, r: 11, d: 0.9, soft: 0 },     // 小さな切れ端。舞っている感じを出す
-    { x: 0.29, y: 0.74, r: 9, d: 0.7, soft: 0 }
+    { x: 0.63, y: 0.17, r: 58, d: 0.6, soft: 0, o: 0.82, L: [[0, 0.95, -14], [2, 0.8, 18, 0, 0.12, -0.04, 0.85]] },
+    { x: 0.94, y: 0.71, r: 96, d: 1.4, soft: 0.5, o: 0.7, L: [[4, 1, 8, 1], [1, 0.72, -24, 0, -0.18, 0.06, 0.8]] },
+    { x: 0.37, y: 0.61, r: 30, d: 0.8, soft: 0, o: 0.78, L: [[1, 1, 32]] },
+    { x: 0.05, y: 0.73, r: 54, d: 1.1, soft: 0.25, o: 0.76, L: [[0, 0.9, 168, 1], [3, 0.85, -40, 0, 0.14, -0.1, 0.8]] },
+    { x: 0.53, y: 0.33, r: 20, d: 0.5, soft: 0, o: 0.7, L: [[3, 1, 62, 1]] },
+    { x: 0.71, y: 0.57, r: 11, d: 0.9, soft: 0, o: 0.62, L: [[2, 1, -70]] },     // 小さな切れ端。舞っている感じを出す
+    { x: 0.29, y: 0.74, r: 9, d: 0.7, soft: 0, o: 0.56, L: [[1, 1, 120, 1]] }
   ];
   var PUFFS_SP = [
-    { x: 0.80, y: 0.50, r: 42, d: 0.7, soft: 0 },
-    { x: 0.15, y: 0.67, r: 26, d: 0.9, soft: 0 },
-    { x: 0.94, y: 0.87, r: 70, d: 1.3, soft: 0.45 },
-    { x: 0.55, y: 0.60, r: 9, d: 0.8, soft: 0 }
+    { x: 0.80, y: 0.50, r: 42, d: 0.7, soft: 0, o: 0.8, L: [[4, 0.85, -10], [2, 0.8, 22, 1, 0.1, -0.06, 0.85]] },
+    { x: 0.15, y: 0.67, r: 26, d: 0.9, soft: 0, o: 0.76, L: [[3, 1, -28]] },
+    { x: 0.94, y: 0.87, r: 70, d: 1.3, soft: 0.45, o: 0.7, L: [[0, 1, 6, 1], [1, 0.7, 30, 0, -0.16, 0.04, 0.8]] },
+    { x: 0.55, y: 0.60, r: 9, d: 0.8, soft: 0, o: 0.58, L: [[1, 1, 80]] }
   ];
   var IVORY = '241,232,212', SHEEN = '255,250,238';
+  var SPRITE_LONG = 2.5; // スプライトの長辺＝半径の何倍で描くか（旧プロシージャルの綿の見た目の大きさに合わせる）
 
   function makePuffSprite(r, soft, seed, dpr) {
     var rnd = mulberry32(seed), S = Math.ceil(r * 5 * dpr), c = S / 2, R = r * dpr;
@@ -261,23 +265,83 @@
     return cv;
   }
 
+  // 大きく縮めると1回の drawImage ではざらつく（ブラウザによっては画素を間引く）ので、半分ずつ縮める
+  function shrink(src, long) {
+    var w = src.naturalWidth || src.width, h = src.naturalHeight || src.height, cur = src;
+    while (Math.max(w, h) > long * 2) {
+      w = Math.max(1, Math.ceil(w / 2)); h = Math.max(1, Math.ceil(h / 2));
+      var t = document.createElement('canvas'); t.width = w; t.height = h;
+      var tg = t.getContext('2d'); tg.imageSmoothingQuality = 'high'; tg.drawImage(cur, 0, 0, w, h);
+      cur = t;
+    }
+    return cur;
+  }
+
+  // 実写スプライトを重ねて1つの塊にする（正方形の canvas。draw では旧プロシージャルと同じく中心に置いて描く）
+  function composePuff(s, R, dpr, sprites) {
+    var S = Math.ceil(R * 3.4 * dpr), c = S / 2, i;
+    var cv = document.createElement('canvas'); cv.width = cv.height = S;
+    var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high';
+    for (i = 0; i < s.L.length; i++) {
+      var L = s.L[i], img = sprites[L[0] % sprites.length];
+      var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+      var long = R * SPRITE_LONG * (L[1] == null ? 1 : L[1]) * dpr, k = long / Math.max(iw, ih);
+      g.save();
+      g.globalAlpha = L[6] == null ? 1 : L[6];
+      g.translate(c + (L[4] || 0) * R * dpr, c + (L[5] || 0) * R * dpr);
+      g.rotate((L[2] || 0) * Math.PI / 180);
+      if (L[3]) g.scale(1, -1);
+      g.drawImage(shrink(img, long), -iw * k / 2, -ih * k / 2, iw * k, ih * k);
+      g.restore();
+    }
+    // ぼかし（手前の大きな塊）: 縮めてから元の大きさに戻す（canvas の filter は Safari で効かないため）
+    var b = (s.soft || 0) * R * 0.06 * dpr;
+    if (b > 1.2) {
+      var small = shrink(cv, S / b), sm = document.createElement('canvas'); sm.width = sm.height = Math.max(8, Math.round(S / b));
+      var sg = sm.getContext('2d'); sg.imageSmoothingQuality = 'high'; sg.drawImage(small, 0, 0, sm.width, sm.height);
+      g.clearRect(0, 0, S, S); g.drawImage(sm, 0, 0, S, S);
+    }
+    return cv;
+  }
+
   function PuffField(canvas, opts) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.still = !!(opts && opts.still);
     this.target = 0; this.cur = 0; this.mouse = [0, 0]; this.mc = [0, 0]; this.fade = this.still ? 1 : 0;
     this.t0 = performance.now(); this.visible = false; this.running = false; this._frame = this._frame.bind(this);
+    this.sprites = null; this.ready = false; // ready＝実写スプライトの読み込み（または失敗して従来描画に切り替え）が済んだ
     this.resize();
     var self = this;
     if ('ResizeObserver' in global) new ResizeObserver(function () { self.resize(); self.draw(); }).observe(canvas);
     if ('IntersectionObserver' in global) new IntersectionObserver(function (es) { self.visible = es[0].isIntersecting; if (self.visible) self.start(); }).observe(canvas);
     else { this.visible = true; this.start(); }
     global.addEventListener('pointermove', function (e) { self.mouse = [e.clientX / global.innerWidth * 2 - 1, e.clientY / global.innerHeight * 2 - 1]; }, { passive: true });
+    // 実写スプライト。1枚でも読めなければ従来のプロシージャル描画にする（見た目がちぐはぐにならないように全部そろってから描く）
+    var srcs = (canvas.getAttribute('data-puff-src') || '').split(' ').filter(Boolean);
+    if (!srcs.length) { this._useSprites(null); return; }
+    var left = srcs.length, failed = false, imgs = srcs.map(function (u) {
+      var im = new Image();
+      im.onload = im.onerror = function (e) {
+        if (e.type === 'error') failed = true;
+        if (--left === 0) self._useSprites(failed ? null : imgs);
+      };
+      im.src = u;
+      return im;
+    });
   }
+  PuffField.prototype._useSprites = function (imgs) {
+    this.sprites = imgs; this.ready = true;
+    this.resize(); this.draw();
+  };
   PuffField.prototype.resize = function () {
-    var r = this.canvas.getBoundingClientRect(), dpr = Math.min(global.devicePixelRatio || 1, 2);
+    var r = this.canvas.getBoundingClientRect(), dpr = Math.min(global.devicePixelRatio || 1, 2), sprites = this.sprites;
     this.w = Math.max(1, r.width); this.h = Math.max(1, r.height); this.dpr = dpr;
     this.canvas.width = Math.round(this.w * dpr); this.canvas.height = Math.round(this.h * dpr);
+    if (!this.ready) { this.puffs = []; return; } // 読み込みが済むまでは何も描かない（従来の綿が一瞬出てから差し替わらないように）
     var spec = this.w > 860 ? PUFFS_PC : PUFFS_SP, k = this.w > 860 ? Math.max(0.75, Math.min(1.3, this.w / 1440)) : 1;
-    this.puffs = spec.map(function (s, i) { return { s: s, r: s.r * k, ph: i * 1.7 + 0.4, img: makePuffSprite(s.r * k, s.soft, 11 + i * 7, dpr) }; });
+    this.puffs = spec.map(function (s, i) {
+      var R = s.r * k;
+      return { s: s, r: R, ph: i * 1.7 + 0.4, o: sprites ? s.o : 0.9, img: sprites ? composePuff(s, R, dpr, sprites) : makePuffSprite(R, s.soft, 11 + i * 7, dpr) };
+    });
   };
   PuffField.prototype.setProgress = function (v) { this.target = v; if (this.still) { this.cur = v; this.draw(); } };
   PuffField.prototype.start = function () { if (this.still) { this.draw(); return; } if (this.running) return; this.running = true; requestAnimationFrame(this._frame); };
@@ -285,7 +349,7 @@
     if (!this.visible) { this.running = false; return; }
     this.cur += (this.target - this.cur) * 0.1;
     this.mc[0] += (this.mouse[0] - this.mc[0]) * 0.04; this.mc[1] += (this.mouse[1] - this.mc[1]) * 0.04;
-    if (performance.now() - this.t0 > 700) this.fade += (1 - this.fade) * 0.025;
+    if (this.ready && performance.now() - this.t0 > 700) this.fade += (1 - this.fade) * 0.025; // 画像が遅れて届いたときも、届いてから0から現れる
     this.draw(); requestAnimationFrame(this._frame);
   };
   PuffField.prototype.draw = function () {
@@ -299,7 +363,7 @@
       var y = p.s.y * self.h + (Math.cos(t * 0.17 + p.ph) * 16 + Math.sin(t * 0.39 + p.ph) * 6) * d * light + self.mc[1] * 12 * d - self.cur * 190 * d * light;
       var sc = 1 + Math.sin(t * 0.31 + p.ph) * 0.03 + self.cur * 0.15 * d, size = p.img.width * sc;
       ctx.setTransform(1, 0, 0, 1, x * dpr, y * dpr); ctx.rotate(t * 0.045 * dir * light + Math.sin(t * 0.23 + p.ph) * 0.12);
-      ctx.globalAlpha = self.fade * 0.9;
+      ctx.globalAlpha = self.fade * p.o;
       ctx.drawImage(p.img, -size / 2, -size / 2, size, size);
     });
     ctx.globalAlpha = 1; ctx.setTransform(1, 0, 0, 1, 0, 0);
