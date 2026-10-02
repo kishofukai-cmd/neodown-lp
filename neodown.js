@@ -697,6 +697,20 @@
     gsap.from($('.metric__num', m), { opacity: 0, x: -60, duration: 1.2, ease: 'power3.out', scrollTrigger: { trigger: m, start: 'top 80%' } });
   });
 
+  /* ---- SUSTAINABILITY: カードは左から順に、矢印は上下に分かれて伸び、最後にキーワード ---- */
+  $$('[data-sus-cards]').forEach(function (g) {
+    gsap.from(g.children, { opacity: 0, y: 44, duration: 1.0, ease: 'power3.out', stagger: 0.15, scrollTrigger: { trigger: g, start: 'top 85%' } });
+  });
+  $$('[data-sus-flow]').forEach(function (f) {
+    f.classList.add('is-armed');
+    ScrollTrigger.create({ trigger: f, start: 'top 70%', once: true, onEnter: function () { f.classList.add('is-play'); } });
+  });
+  $$('[data-sus-keys]').forEach(function (k) {
+    k.classList.add('is-armed');
+    ScrollTrigger.create({ trigger: k, start: 'top 88%', once: true, onEnter: function () { k.classList.add('is-play'); } });
+    gsap.from(k.children, { opacity: 0, y: 24, duration: 0.9, ease: 'power3.out', stagger: 0.12, delay: 0.3, scrollTrigger: { trigger: k, start: 'top 88%' } });
+  });
+
   /* ---- 全面の写真帯: ゆっくりずれる ---------------------------------------- */
   $$('[data-band]').forEach(function (b) {
     gsap.fromTo($('img', b), { yPercent: -16 }, { yPercent: 0, ease: 'none', scrollTrigger: { trigger: b, start: 'top bottom', end: 'bottom top', scrub: true } });
