@@ -14,7 +14,7 @@
   window.__rcBoot = true;
 
   var LOCAL = window.__RC_LOCAL;
-  var BASE = "https://kishofukai-cmd.github.io/neodown-lp/recruit/", V = "c60b2e67c9";
+  var BASE = "https://kishofukai-cmd.github.io/neodown-lp/recruit/", V = "aae0ffa91f";
   var htmlP, appP;
 
   function load(src) {
