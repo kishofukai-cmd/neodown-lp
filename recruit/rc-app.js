@@ -6,6 +6,7 @@
   - 職種の「この職種で応募する」→ フォームの希望職種を選んでから移動
   - 開閉（details）をなめらかに
   - 応募フォームへの固定ボタン（ヒーローを過ぎたら出す・フォームが見えたら隠す）
+  - /recruit#marketer など職種の名前付きで来たら、その職種を開いて見せる
 */
 (function () {
   var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -106,6 +107,18 @@
     });
   }
 
+  // /recruit#marketer のように職種の名前付きで来たら、その職種を開いて見せる（Xの投稿から直接開くため）。
+  // 写真の読み込みと Studio 側のスクロールが落ち着いてから動かす
+  function openFromHash(root) {
+    var key = decodeURIComponent(location.hash.slice(1));
+    if (!/^[\w-]+$/.test(key)) return;
+    var d = root.querySelector('details[data-job="' + key + '"]');
+    if (!d) return;
+    d.open = true;
+    function go() { setTimeout(function () { scrollToEl(d, 100); }, 300); }
+    if (document.readyState === 'complete') go(); else window.addEventListener('load', go, { once: true });
+  }
+
   function links(root) {
     root.addEventListener('click', function (e) {
       var apply = e.target.closest('[data-apply]');
@@ -178,7 +191,13 @@
     accordions(root);
     links(root);
     floatingButton(root);
+    openFromHash(root);
   }
+
+  window.addEventListener('hashchange', function () {
+    var root = document.querySelector('[data-rc-root]');
+    if (root) openFromHash(root);
+  });
 
   window.RCLP = { mount: mount, pickJob: pickJob };
 })();
